@@ -5,6 +5,8 @@ use std::path::Path;
 use sha::sha1;
 use sha::utils::{Digest, DigestExt};
 
+const VALID_HASH: &str = "9bef1128717f958171a4afac3ed78ee2bb4e86ce";
+
 #[derive(Debug)]
 pub enum Error {
     Io(std::io::Error),
@@ -22,8 +24,9 @@ impl std::fmt::Display for Error {
             ),
             Error::InvalidRom(hash) => write!(
                 f,
-                "Invalid Super Mario 64 rom: found hash '{}', expected hash '9bef1128717f958171a4afac3ed78ee2bb4e86ce'", hash 
-            )
+                "Invalid Super Mario 64 rom: found hash '{}', expected hash '{}'",
+                hash, VALID_HASH
+            ),
         }
     }
 }
@@ -47,14 +50,14 @@ impl Sm64 {
 
         let rom_hash = sha1::Sha1::default().digest(&*rom_data).to_hex();
 
-        if rom_hash != "9bef1128717f958171a4afac3ed78ee2bb4e86ce" {
+        if rom_hash != VALID_HASH {
             return Err(Error::InvalidRom(rom_hash));
         }
 
         let mut texture_data =
             vec![
                 0;
-                (libsm64_sys::SM64_TEXTURE_WIDTH * libsm64_sys::SM64_TEXTURE_HEIGHT) as usize * 3
+                (libsm64_sys::SM64_TEXTURE_WIDTH * libsm64_sys::SM64_TEXTURE_HEIGHT) as usize * 4
             ];
 
         unsafe {
@@ -125,7 +128,7 @@ impl<'ctx> Mario<'ctx> {
         unsafe {
             let mut geometry = (&mut self.geometry).into();
             libsm64_sys::sm64_mario_tick(
-                self.id as u32,
+                self.id,
                 &input as *const _,
                 &mut state as *mut _,
                 &mut geometry as *mut _,
@@ -268,7 +271,20 @@ impl<'a> From<&'a mut MarioGeometry> for libsm64_sys::SM64MarioGeometryBuffers {
             normal: geo.normal.as_mut_ptr() as *mut _,
             color: geo.color.as_mut_ptr() as *mut _,
             uv: geo.uv.as_mut_ptr() as *mut _,
-            numTrianglesUsed: geo.position.len() as u16 / 32,
+            numTrianglesUsed: geo.position.len() as u16 / 3,
         }
+    }
+}
+
+#[test]
+fn basic_loading() {
+    let rom = std::env::var("SM64_ROM_PATH")
+        .expect("Path to SM64 rom must be proivided in 'SM64_ROM_PATH' env var");
+    let sm64 = Sm64::new(rom).unwrap();
+    let mario = sm64.create_mario(1, 2, 3);
+
+    match mario {
+        Err(Error::InvalidMarioPosition) => (),
+        _ => panic!("Expected InvalidMarioPosition error"),
     }
 }
