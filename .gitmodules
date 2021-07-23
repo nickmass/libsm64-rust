@@ -1,0 +1,3 @@
+[submodule "libsm64-sys/libsm64"]
+	path = libsm64-sys/libsm64
+	url = https://github.com/libsm64/libsm64.git
