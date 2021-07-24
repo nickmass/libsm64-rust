@@ -291,7 +291,7 @@ impl MarioGeometry {
             .zip(normals)
             .zip(color)
             .zip(uv)
-            .take(self.num_triangles / 3)
+            .take(self.num_triangles * 3)
             .map(|(((position, normal), color), uv)| MarioVertex {
                 position,
                 normal,
@@ -332,6 +332,22 @@ impl MarioGeometry {
                 };
                 (a, b, c)
             })
+    }
+
+    pub fn positions(&self) -> &[Point3<f32>] {
+        &self.position[0..self.num_triangles * 3]
+    }
+
+    pub fn normals(&self) -> &[Point3<f32>] {
+        &self.normal[0..self.num_triangles * 3]
+    }
+
+    pub fn colors(&self) -> &[Color] {
+        &self.color[0..self.num_triangles * 3]
+    }
+
+    pub fn uvs(&self) -> &[Point2<f32>] {
+        &self.uv[0..self.num_triangles * 3]
     }
 }
 
