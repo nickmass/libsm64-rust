@@ -88,7 +88,7 @@ impl Sm64 {
         }
     }
 
-    pub fn load_level_geometry(geometry: &[LevelTriangle]) {
+    pub fn load_level_geometry(&self, geometry: &[LevelTriangle]) {
         unsafe {
             libsm64_sys::sm64_static_surfaces_load(
                 geometry.as_ptr() as *const _,
@@ -125,17 +125,24 @@ impl<'ctx> Mario<'ctx> {
             health: 0,
         };
 
-        unsafe {
-            let mut geometry = (&mut self.geometry).into();
+        let tris = unsafe {
+            let mut geometry: libsm64_sys::SM64MarioGeometryBuffers = (&mut self.geometry).into();
             libsm64_sys::sm64_mario_tick(
                 self.id,
                 &input as *const _,
                 &mut state as *mut _,
                 &mut geometry as *mut _,
-            )
-        }
+            );
+            geometry.numTrianglesUsed
+        };
+
+        self.geometry.num_triangles = tris as usize;
 
         state.into()
+    }
+
+    pub fn geometry(&self) -> &MarioGeometry {
+        &self.geometry
     }
 }
 
@@ -153,17 +160,23 @@ pub struct Texture<'data> {
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
-pub struct Point3 {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
+pub struct Point3<T>
+where
+    T: Copy,
+{
+    pub x: T,
+    pub y: T,
+    pub z: T,
 }
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
-pub struct Point2 {
-    pub x: f32,
-    pub y: f32,
+pub struct Point2<T>
+where
+    T: Copy,
+{
+    pub x: T,
+    pub y: T,
 }
 
 #[repr(C)]
@@ -174,25 +187,28 @@ pub struct Color {
     pub b: f32,
 }
 
-#[repr(C)]
+#[repr(u16)]
+#[derive(Copy, Clone, Debug)]
 pub enum Surface {
     Default = 0x0000,
 }
 
-#[repr(C)]
+#[repr(u16)]
+#[derive(Copy, Clone, Debug)]
 pub enum Terrain {
     Grass = 0x0000,
 }
 
 #[repr(C)]
+#[derive(Copy, Clone, Debug)]
 pub struct LevelTriangle {
     pub kind: Surface,
     pub force: i16,
     pub terrain: Terrain,
-    pub vertices: (Point3, Point3, Point3),
+    pub vertices: (Point3<i16>, Point3<i16>, Point3<i16>),
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct MarioInput {
     pub cam_look_x: f32,
     pub cam_look_z: f32,
@@ -219,10 +235,10 @@ impl From<MarioInput> for libsm64_sys::SM64MarioInputs {
 
 #[derive(Debug, Default, Copy, Clone)]
 pub struct MarioState {
-    position: Point3,
-    velocity: Point3,
-    face_angle: f32,
-    health: i16,
+    pub position: Point3<f32>,
+    pub velocity: Point3<f32>,
+    pub face_angle: f32,
+    pub health: i16,
 }
 
 impl From<libsm64_sys::SM64MarioState> for MarioState {
@@ -247,10 +263,11 @@ impl From<libsm64_sys::SM64MarioState> for MarioState {
 }
 
 pub struct MarioGeometry {
-    position: Vec<Point3>,
-    normal: Vec<Point3>,
+    position: Vec<Point3<f32>>,
+    normal: Vec<Point3<f32>>,
     color: Vec<Color>,
-    uv: Vec<Point2>,
+    uv: Vec<Point2<f32>>,
+    num_triangles: usize,
 }
 
 impl MarioGeometry {
@@ -260,7 +277,61 @@ impl MarioGeometry {
             normal: vec![Point3::default(); libsm64_sys::SM64_GEO_MAX_TRIANGLES as usize * 3],
             color: vec![Color::default(); libsm64_sys::SM64_GEO_MAX_TRIANGLES as usize * 3],
             uv: vec![Point2::default(); libsm64_sys::SM64_GEO_MAX_TRIANGLES as usize * 3],
+            num_triangles: 0,
         }
+    }
+
+    pub fn vertcies(&self) -> impl Iterator<Item = MarioVertex> + '_ {
+        let positions = self.position.iter().copied();
+        let normals = self.normal.iter().copied();
+        let color = self.color.iter().copied();
+        let uv = self.uv.iter().copied();
+
+        positions
+            .zip(normals)
+            .zip(color)
+            .zip(uv)
+            .take(self.num_triangles / 3)
+            .map(|(((position, normal), color), uv)| MarioVertex {
+                position,
+                normal,
+                color,
+                uv,
+            })
+    }
+
+    pub fn triangles(&self) -> impl Iterator<Item = (MarioVertex, MarioVertex, MarioVertex)> + '_ {
+        let positions = self.position.chunks_exact(3);
+        let normals = self.normal.chunks_exact(3);
+        let color = self.color.chunks_exact(3);
+        let uv = self.uv.chunks_exact(3);
+
+        positions
+            .zip(normals)
+            .zip(color)
+            .zip(uv)
+            .take(self.num_triangles)
+            .map(|(((positions, normals), colors), uvs)| {
+                let a = MarioVertex {
+                    position: positions[0],
+                    normal: normals[0],
+                    color: colors[0],
+                    uv: uvs[0],
+                };
+                let b = MarioVertex {
+                    position: positions[1],
+                    normal: normals[1],
+                    color: colors[1],
+                    uv: uvs[1],
+                };
+                let c = MarioVertex {
+                    position: positions[2],
+                    normal: normals[2],
+                    color: colors[2],
+                    uv: uvs[2],
+                };
+                (a, b, c)
+            })
     }
 }
 
@@ -276,6 +347,14 @@ impl<'a> From<&'a mut MarioGeometry> for libsm64_sys::SM64MarioGeometryBuffers {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct MarioVertex {
+    pub position: Point3<f32>,
+    pub normal: Point3<f32>,
+    pub color: Color,
+    pub uv: Point2<f32>,
+}
+
 #[test]
 fn basic_loading() {
     let rom = std::env::var("SM64_ROM_PATH")
@@ -287,4 +366,37 @@ fn basic_loading() {
         Err(Error::InvalidMarioPosition) => (),
         _ => panic!("Expected InvalidMarioPosition error"),
     }
+}
+
+#[test]
+fn correct_repr() {
+    assert_eq!(
+        std::mem::size_of::<LevelTriangle>(),
+        std::mem::size_of::<libsm64_sys::SM64Surface>()
+    );
+
+    let tri = LevelTriangle {
+        kind: Surface::Default,
+        force: 333,
+        terrain: Terrain::Grass,
+        vertices: (
+            Point3 { x: 1, y: 2, z: 3 },
+            Point3 { x: 4, y: 5, z: 6 },
+            Point3 { x: 7, y: 8, z: 9 },
+        ),
+    };
+
+    let c_tri = libsm64_sys::SM64Surface {
+        type_: 0,
+        force: 333,
+        terrain: 0,
+        vertices: [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+    };
+
+    let my_c_tri = unsafe { std::mem::transmute::<_, libsm64_sys::SM64Surface>(tri) };
+
+    assert_eq!(c_tri.type_, my_c_tri.type_);
+    assert_eq!(c_tri.force, my_c_tri.force);
+    assert_eq!(c_tri.terrain, my_c_tri.terrain);
+    assert_eq!(c_tri.vertices, my_c_tri.vertices);
 }
