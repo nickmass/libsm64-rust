@@ -168,7 +168,7 @@ impl Sm64 {
             libsm64_sys::sm64_surface_object_create(&surface_object as *const _)
         };
 
-        DynamicSurface::new(&self, id)
+        DynamicSurface::new(self, id)
     }
 
     /// Load the static level geometry, used for collision detection
@@ -251,7 +251,7 @@ impl<'ctx> DynamicSurface<'ctx> {
     }
 
     /// Reposition or rotate the surface
-    pub fn transform(&self, transform: SurfaceTransform) {
+    pub fn transform(&mut self, transform: SurfaceTransform) {
         unsafe {
             let transform = transform.into();
             libsm64_sys::sm64_surface_object_move(self.id, &transform as *const _)
