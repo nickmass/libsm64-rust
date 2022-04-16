@@ -13,7 +13,7 @@ use libsm64::*;
 const ROM_PATH: &str = "./baserom.us.z64";
 let rom = File::open(ROM_PATH).unwrap();
 
-let sm64 = Sm64::new(rom).unwrap();
+let mut sm64 = Sm64::new(rom).unwrap();
 
 // Convert your existing level geometry into LevelTriangles
 let level_collision_geometry = create_level_geometry();

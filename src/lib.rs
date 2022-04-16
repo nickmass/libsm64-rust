@@ -15,7 +15,7 @@ use libsm64::*;
 const ROM_PATH: &str = "./baserom.us.z64";
 let rom = File::open(ROM_PATH).unwrap();
 
-let sm64 = Sm64::new(rom).unwrap();
+let mut sm64 = Sm64::new(rom).unwrap();
 
 // Convert your existing level geometry into LevelTriangles
 let level_collision_geometry = create_level_geometry();
@@ -59,10 +59,13 @@ for triangle in mario.geometry().triangles() {
 
 use std::io::{BufReader, Read};
 
+use once_cell::sync::OnceCell;
 use sha::sha1;
 use sha::utils::{Digest, DigestExt};
 
 const VALID_HASH: &str = "9bef1128717f958171a4afac3ed78ee2bb4e86ce";
+
+static SM64: once_cell::sync::OnceCell<Sm64Inner> = OnceCell::new();
 
 /// An error that can occur
 #[derive(Debug)]
@@ -98,11 +101,14 @@ impl From<std::io::Error> for Error {
     }
 }
 
-/// The core interface to libsm64
-pub struct Sm64 {
+struct Sm64Inner {
     texture_data: Vec<u8>,
+    #[allow(dead_code)]
     rom_data: Vec<u8>,
 }
+
+/// The core interface to libsm64
+pub struct Sm64;
 
 impl Sm64 {
     /// Create a new instance of Sm64, requires a Super Mario 64 rom to extra Mario's texture and animation data from
@@ -117,48 +123,62 @@ impl Sm64 {
             return Err(Error::InvalidRom(rom_hash));
         }
 
-        let mut texture_data =
-            vec![
+        let _sm64 = SM64.get_or_init(|| {
+            let mut texture_data = vec![
                 0;
-                (libsm64_sys::SM64_TEXTURE_WIDTH * libsm64_sys::SM64_TEXTURE_HEIGHT) as usize * 4
+                (libsm64_sys::SM64_TEXTURE_WIDTH * libsm64_sys::SM64_TEXTURE_HEIGHT)
+                    as usize
+                    * 4
             ];
 
-        unsafe {
-            libsm64_sys::sm64_global_init(rom_data.as_mut_ptr(), texture_data.as_mut_ptr(), None);
-        }
+            unsafe {
+                libsm64_sys::sm64_global_init(
+                    rom_data.as_mut_ptr(),
+                    texture_data.as_mut_ptr(),
+                    None,
+                );
+            }
 
-        Ok(Self {
-            texture_data,
-            rom_data,
-        })
+            Sm64Inner {
+                texture_data,
+                rom_data,
+            }
+        });
+
+        Ok(Self)
     }
 
     /// A texture atlas that can be applied to the Mario geometry
-    pub fn texture(&self) -> Texture<'_> {
+    pub fn texture(&self) -> Texture {
+        let texture_data = &SM64
+            .get()
+            .expect("Sm64::new() must of been called")
+            .texture_data;
+
         Texture {
-            data: &*self.texture_data,
+            data: texture_data.as_slice(),
             width: libsm64_sys::SM64_TEXTURE_WIDTH,
             height: libsm64_sys::SM64_TEXTURE_HEIGHT,
         }
     }
 
     /// Create a new instancec of Mario that spawns at the point indicated by x/y/z, he must be placed above a surface or an error will be returned
-    pub fn create_mario<'ctx>(&'ctx self, x: i16, y: i16, z: i16) -> Result<Mario<'ctx>, Error> {
+    pub fn create_mario(&mut self, x: i16, y: i16, z: i16) -> Result<Mario, Error> {
         let mario_id = unsafe { libsm64_sys::sm64_mario_create(x, y, z) };
 
         if mario_id < 0 {
             Err(Error::InvalidMarioPosition)
         } else {
-            Ok(Mario::new(self, mario_id))
+            Ok(Mario::new(mario_id))
         }
     }
 
     /// Create a dynamic surface that can have its position and rotation updated at runtime, good for moving platforms
-    pub fn create_dynamic_surface<'ctx>(
-        &'ctx self,
+    pub fn create_dynamic_surface(
+        &mut self,
         geometry: &[LevelTriangle],
         transform: SurfaceTransform,
-    ) -> DynamicSurface<'ctx> {
+    ) -> DynamicSurface {
         let id = unsafe {
             let surface_object = libsm64_sys::SM64SurfaceObject {
                 transform: transform.into(),
@@ -168,11 +188,11 @@ impl Sm64 {
             libsm64_sys::sm64_surface_object_create(&surface_object as *const _)
         };
 
-        DynamicSurface::new(self, id)
+        DynamicSurface::new(id)
     }
 
     /// Load the static level geometry, used for collision detection
-    pub fn load_level_geometry(&self, geometry: &[LevelTriangle]) {
+    pub fn load_level_geometry(&mut self, geometry: &[LevelTriangle]) {
         unsafe {
             libsm64_sys::sm64_static_surfaces_load(
                 geometry.as_ptr() as *const _,
@@ -182,23 +202,16 @@ impl Sm64 {
     }
 }
 
-impl Drop for Sm64 {
-    fn drop(&mut self) {
-        unsafe { libsm64_sys::sm64_global_terminate() }
-    }
-}
-
 /// A instance of Mario that can be controlled
-pub struct Mario<'ctx> {
+pub struct Mario {
     id: i32,
     geometry: MarioGeometry,
-    ctx: &'ctx Sm64,
 }
 
-impl<'ctx> Mario<'ctx> {
-    fn new(ctx: &'ctx Sm64, id: i32) -> Self {
+impl Mario {
+    fn new(id: i32) -> Self {
         let geometry = MarioGeometry::new();
-        Self { id, geometry, ctx }
+        Self { id, geometry }
     }
 
     /// Advance the Mario simulation ahead by 1 frame, should be called 30 times per second
@@ -233,21 +246,20 @@ impl<'ctx> Mario<'ctx> {
     }
 }
 
-impl<'ctx> Drop for Mario<'ctx> {
+impl Drop for Mario {
     fn drop(&mut self) {
         unsafe { libsm64_sys::sm64_mario_delete(self.id) }
     }
 }
 
 /// A dynamic surface that can have its position and rotation updated at runtime, good for moving platforms
-pub struct DynamicSurface<'ctx> {
+pub struct DynamicSurface {
     id: u32,
-    ctx: &'ctx Sm64,
 }
 
-impl<'ctx> DynamicSurface<'ctx> {
-    fn new(ctx: &'ctx Sm64, id: u32) -> Self {
-        Self { id, ctx }
+impl DynamicSurface {
+    fn new(id: u32) -> Self {
+        Self { id }
     }
 
     /// Reposition or rotate the surface
@@ -259,7 +271,7 @@ impl<'ctx> DynamicSurface<'ctx> {
     }
 }
 
-impl<'ctx> Drop for DynamicSurface<'ctx> {
+impl Drop for DynamicSurface {
     fn drop(&mut self) {
         unsafe { libsm64_sys::sm64_surface_object_delete(self.id) }
     }
@@ -292,9 +304,9 @@ impl From<SurfaceTransform> for libsm64_sys::SM64ObjectTransform {
 }
 
 /// A texture atlas that can be applied to the Mario geometry
-pub struct Texture<'data> {
+pub struct Texture {
     /// 8-bit RGBA values
-    pub data: &'data [u8],
+    pub data: &'static [u8],
     /// The width of the texture
     pub width: u32,
     /// The height of the texture
@@ -708,7 +720,7 @@ fn basic_loading() {
     let rom = std::env::var("SM64_ROM_PATH")
         .expect("Path to SM64 rom must be proivided in 'SM64_ROM_PATH' env var");
     let rom = std::fs::File::open(rom).unwrap();
-    let sm64 = Sm64::new(rom).unwrap();
+    let mut sm64 = Sm64::new(rom).unwrap();
     let mario = sm64.create_mario(1, 2, 3);
 
     match mario {

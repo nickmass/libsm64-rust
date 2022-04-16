@@ -51,7 +51,10 @@ fn main() {
             .expect("Unable to download mario geometry");
     }
 
-    cc::Build::new().files(C_FILES).compile("sm64");
+    cc::Build::new()
+        .files(C_FILES)
+        .warnings(false)
+        .compile("sm64");
 
     let bindings = bindgen::Builder::default()
         .header("libsm64/src/libsm64.h")
