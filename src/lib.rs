@@ -448,7 +448,7 @@ impl MarioGeometry {
     }
 
     /// The geometry represented as a series of vertices, every 3 verticies is a new triangle. Includes position, normal, color, and texture coordinates
-    pub fn vertcies(&self) -> impl Iterator<Item = MarioVertex> + '_ {
+    pub fn vertices(&self) -> impl Iterator<Item = MarioVertex> + '_ {
         let positions = self.position.iter().copied();
         let normals = self.normal.iter().copied();
         let color = self.color.iter().copied();
