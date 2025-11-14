@@ -4,6 +4,22 @@ use std::process::Command;
 
 const C_FILES: &[&str] = &[
     "libsm64/src/debug_print.c",
+    "libsm64/src/decomp/audio/copt/seq_channel_layer_process_script_copt.inc.c",
+    "libsm64/src/decomp/audio/data.c",
+    "libsm64/src/decomp/audio/effects.c",
+    "libsm64/src/decomp/audio/external.c",
+    "libsm64/src/decomp/audio/globals_start.c",
+    "libsm64/src/decomp/audio/heap.c",
+    "libsm64/src/decomp/audio/load.c",
+    "libsm64/src/decomp/audio/load_dat.c",
+    "libsm64/src/decomp/audio/load_sh.c",
+    "libsm64/src/decomp/audio/playback.c",
+    "libsm64/src/decomp/audio/port_eu.c",
+    "libsm64/src/decomp/audio/port_sh.c",
+    "libsm64/src/decomp/audio/seqplayer.c",
+    "libsm64/src/decomp/audio/shindou_debug_prints.c",
+    "libsm64/src/decomp/audio/synthesis.c",
+    "libsm64/src/decomp/audio/synthesis_sh.c",
     "libsm64/src/decomp/engine/geo_layout.c",
     "libsm64/src/decomp/engine/graph_node.c",
     "libsm64/src/decomp/engine/graph_node_manager.c",
@@ -25,19 +41,27 @@ const C_FILES: &[&str] = &[
     "libsm64/src/decomp/game/object_stuff.c",
     "libsm64/src/decomp/game/platform_displacement.c",
     "libsm64/src/decomp/game/rendering_graph_node.c",
+    "libsm64/src/decomp/game/sound_init.c",
     "libsm64/src/decomp/global_state.c",
     "libsm64/src/decomp/mario/geo.inc.c",
     "libsm64/src/decomp/mario/model.inc.c",
     "libsm64/src/decomp/memory.c",
+    "libsm64/src/decomp/pc/alBnkfNew.c",
+    "libsm64/src/decomp/pc/mixer.c",
+    "libsm64/src/decomp/pc/ultra_reimplementation.c",
+    "libsm64/src/decomp/tools/convUtils.c",
     "libsm64/src/decomp/tools/libmio0.c",
     "libsm64/src/decomp/tools/n64graphics.c",
     "libsm64/src/decomp/tools/utils.c",
+    "libsm64/src/fake_interaction.c",
     "libsm64/src/gfx_adapter.c",
     "libsm64/src/libsm64.c",
     "libsm64/src/load_anim_data.c",
+    "libsm64/src/load_audio_data.c",
     "libsm64/src/load_surfaces.c",
     "libsm64/src/load_tex_data.c",
     "libsm64/src/obj_pool.c",
+    "libsm64/src/play_sound.c",
 ];
 
 const MARIO_GEO: &str = "libsm64/src/decomp/mario/geo.inc.c";
@@ -52,8 +76,13 @@ fn main() {
     }
 
     cc::Build::new()
-        .files(C_FILES)
+        .flags(["-fno-strict-aliasing", "-fPIC", "-fvisibility=hidden"])
         .warnings(false)
+        .define("GBI_FLOATS", None)
+        .define("VERSION_US", None)
+        .define("NO_SEGMENTED_MEMORY", None)
+        .files(C_FILES)
+        .include("libsm64/src/decomp/include")
         .compile("sm64");
 
     let bindings = bindgen::Builder::default()

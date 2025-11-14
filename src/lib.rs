@@ -24,7 +24,7 @@ let level_collision_geometry = create_level_geometry();
 sm64.load_level_geometry(&level_collision_geometry);
 
 // Create a new Mario and provide his starting position
-let mut mario = sm64.create_mario(0, 0, 0).unwrap();
+let mut mario = sm64.create_mario(0.0, 0.0, 0.0).unwrap();
 
 let input = MarioInput {
     stick_x: 0.5,
@@ -132,11 +132,7 @@ impl Sm64 {
             ];
 
             unsafe {
-                libsm64_sys::sm64_global_init(
-                    rom_data.as_mut_ptr(),
-                    texture_data.as_mut_ptr(),
-                    None,
-                );
+                libsm64_sys::sm64_global_init(rom_data.as_mut_ptr(), texture_data.as_mut_ptr());
             }
 
             Sm64Inner {
@@ -163,7 +159,7 @@ impl Sm64 {
     }
 
     /// Create a new instancec of Mario that spawns at the point indicated by x/y/z, he must be placed above a surface or an error will be returned
-    pub fn create_mario(&mut self, x: i16, y: i16, z: i16) -> Result<Mario, Error> {
+    pub fn create_mario(&mut self, x: f32, y: f32, z: f32) -> Result<Mario, Error> {
         let mario_id = unsafe { libsm64_sys::sm64_mario_create(x, y, z) };
 
         if mario_id < 0 {
@@ -222,6 +218,13 @@ impl Mario {
             velocity: [0.0, 0.0, 0.0],
             faceAngle: 0.0,
             health: 0,
+            forwardVelocity: 0.0,
+            action: 0,
+            animID: 0,
+            animFrame: 0,
+            flags: 0,
+            particleFlags: 0,
+            invincTimer: 0,
         };
 
         let tris = unsafe {
@@ -357,7 +360,7 @@ pub struct LevelTriangle {
     /// The verticies of the triangle. Super Mario 64 using integer math for its collision detection expect to have to scale your vertexes appropriately to use them for level geometry
     ///
     /// **Note:** The order of the verticies is important, Mario will only collide with the front face of the geometry
-    pub vertices: (Point3<i16>, Point3<i16>, Point3<i16>),
+    pub vertices: (Point3<i32>, Point3<i32>, Point3<i32>),
 }
 
 /// The input for a frame of Mario's logic
@@ -721,7 +724,7 @@ fn basic_loading() {
         .expect("Path to SM64 rom must be proivided in 'SM64_ROM_PATH' env var");
     let rom = std::fs::File::open(rom).unwrap();
     let mut sm64 = Sm64::new(rom).unwrap();
-    let mario = sm64.create_mario(1, 2, 3);
+    let mario = sm64.create_mario(1.0, 2.0, 3.0);
 
     match mario {
         Err(Error::InvalidMarioPosition) => (),
