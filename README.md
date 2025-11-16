@@ -22,7 +22,7 @@ let level_collision_geometry = create_level_geometry();
 sm64.load_level_geometry(&level_collision_geometry);
 
 // Create a new Mario and provide his starting position
-let mut mario = sm64.create_mario(0, 0, 0).unwrap();
+let mut mario = sm64.create_mario(0.0, 0.0, 0.0).unwrap();
 
 let input = MarioInput {
     stick_x: 0.5,
